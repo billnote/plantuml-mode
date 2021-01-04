@@ -6,8 +6,10 @@
 ;; Author: Zhang Weize (zwz)
 ;; Maintainer: Carlo Sciolla (skuro)
 ;; Keywords: uml plantuml ascii
+;; Package-Commit: ea45a13707abd2a70df183f1aec6447197fc9ccc
 ;; Version: 1.2.9
-;; Package-Version: 1.2.9
+;; Package-Version: 20191102.2056
+;; Package-X-Original-Version: 1.2.9
 ;; Package-Requires: ((dash "2.0.0") (emacs "25.0"))
 
 ;; This file is free software; you can redistribute it and/or modify
@@ -111,7 +113,7 @@
   :type 'string
   :group 'plantuml)
 
-(defcustom plantuml-java-args (list "-Djava.awt.headless=true" "-jar" "--illegal-access=deny")
+(defcustom plantuml-java-args (list "-Djava.awt.headless=true" "-jar")
   "The parameters passed to `plantuml-java-command' when executing PlantUML."
   :type '(repeat string)
   :group 'plantuml)
@@ -157,7 +159,7 @@
 (defvar plantuml-mode-syntax-table
   (let ((synTable (make-syntax-table)))
     (modify-syntax-entry ?\/  ". 14c"   synTable)
-    (modify-syntax-entry ?'   "< 23"    synTable)
+    (modify-syntax-entry ?'   ". 23"    synTable)
     (modify-syntax-entry ?\n  ">"       synTable)
     (modify-syntax-entry ?\r  ">"       synTable)
     (modify-syntax-entry ?!   "w"       synTable)
@@ -170,6 +172,9 @@
 (defvar plantuml-keywords nil)
 (defvar plantuml-preprocessors nil)
 (defvar plantuml-builtins nil)
+(defvar plantuml-keywords-extend '("then" "scale" "printscale" "starts" "lasts" "opened" "closed" "and" "colored" "in" "at" "days" "Project" "are"))
+(defvar plantuml-colors nil)
+(defvar plantuml-colors-regexp nil)
 
 ;; keyword completion
 (defvar plantuml-kwdList nil "The plantuml keywords.")
@@ -311,9 +316,15 @@
                 ((string= word "keyword")
                  (setq plantuml-keywords
                        (split-string
-                        (buffer-substring-no-properties pos (point)))))
+                        (buffer-substring-no-properties pos (point))))
+                 (while plantuml-keywords-extend
+                   (add-to-list 'plantuml-keywords (pop plantuml-keywords-extend))))
                 ((string= word "preprocessor")
                  (setq plantuml-preprocessors
+                       (split-string
+                        (buffer-substring-no-properties pos (point)))))
+                ((string= word "color")
+                 (setq plantuml-colors
                        (split-string
                         (buffer-substring-no-properties pos (point)))))
                 (t (setq plantuml-builtins
@@ -545,10 +556,13 @@ Uses prefix (as PREFIX) to choose where to display it:
     (unless plantuml-kwdList
       (plantuml-init mode)
       (defvar plantuml-types-regexp (concat "^\\s *\\(" (regexp-opt plantuml-types 'words) "\\|\\<\\(note\\s +over\\|note\\s +\\(left\\|right\\|bottom\\|top\\)\\s +\\(of\\)?\\)\\>\\|\\<\\(\\(left\\|center\\|right\\)\\s +\\(header\\|footer\\)\\)\\>\\)"))
-      (defvar plantuml-keywords-regexp (concat "^\\s *" (regexp-opt plantuml-keywords 'words)  "\\|\\(<\\|<|\\|\\*\\|o\\)\\(\\.+\\|-+\\)\\|\\(\\.+\\|-+\\)\\(>\\||>\\|\\*\\|o\\)\\|\\.\\{2,\\}\\|-\\{2,\\}"))
+      (defvar plantuml-keywords-regexp (concat
+                                        "\\s *"
+                                        (regexp-opt plantuml-keywords 'words)
+                                        "\\|\\s +then\\s +\\(<\\|<|\\|\\*\\|o\\)\\(\\.+\\|-+\\)\\|\\(\\.+\\|-+\\)\\(>\\||>\\|\\*\\|o\\)\\|\\.\\{2,\\}\\|-\\{2,\\}"))
       (defvar plantuml-builtins-regexp (regexp-opt plantuml-builtins 'words))
       (defvar plantuml-preprocessors-regexp (concat "^\\s *" (regexp-opt plantuml-preprocessors 'words)))
-
+      (setq plantuml-colors-regexp (concat "\\( \\|^\\)\\(" (regexp-opt plantuml-colors 'words) "\\)\\(\\ \\|$\\)"))
       ;; Below are the regexp's for indentation.
       ;; Notes:
       ;; - there is some control on what it is indented by overriding some of below
@@ -653,8 +667,24 @@ or it is followed by line end.")
       (mapc (lambda (x) (puthash x t plantuml-kwdList)) plantuml-keywords)
       (mapc (lambda (x) (puthash x t plantuml-kwdList)) plantuml-builtins)
       (mapc (lambda (x) (puthash x t plantuml-kwdList)) plantuml-preprocessors)
+      (mapc (lambda (x) (puthash x t plantuml-kwdList)) plantuml-colors)
       (put 'plantuml-kwdList 'risky-local-variable t)
 
+      ;; (message "types: %s" plantuml-types)
+      ;; (message "types-regexp: %s" plantuml-types-regexp)
+
+      ;; (message "keywords: %s" plantuml-keywords)
+      ;; (message "keyword-regexp: %s" plantuml-keywords-regexp)
+
+      ;; (message "preprocessors: %s" plantuml-preprocessors)
+      ;; (message "preprocessors-regexp: %s" plantuml-preprocessors-regexp)
+
+      ;; (message "builtins: %s" plantuml-builtins)
+      ;; (message "builtins-regexp: %s" plantuml-builtins-regexp)
+
+      ;; (message "colors: %s" plantuml-colors)
+      ;; (message "colors-regexp: %s" plantuml-colors-regexp)
+      
       ;; clear memory
       (setq plantuml-types nil)
       (setq plantuml-keywords nil)
@@ -663,7 +693,8 @@ or it is followed by line end.")
       (setq plantuml-types-regexp nil)
       (setq plantuml-keywords-regexp nil)
       (setq plantuml-builtins-regexp nil)
-      (setq plantuml-preprocessors-regexp nil))))
+      (setq plantuml-preprocessors-regexp nil)
+      (setq plantuml-colors nil))))
 
 (defun plantuml-complete-symbol ()
   "Perform keyword completion on word before cursor."
@@ -744,7 +775,7 @@ Shortcuts             Command Name
   (set (make-local-variable 'comment-multi-line) t)
   (set (make-local-variable 'comment-style) 'extra-line)
   (set (make-local-variable 'indent-line-function) 'plantuml-indent-line)
-  (setq font-lock-defaults '((plantuml-font-lock-keywords) nil t)))
+  (setq font-lock-defaults '(plantuml-font-lock-keywords)))
 
 (defun plantuml-deprecation-warning ()
   "Warns the user about the deprecation of the `puml-mode' project."
@@ -755,7 +786,43 @@ Shortcuts             Command Name
 You should move your configuration to use `plantuml-mode'. \
 See more at https://github.com/skuro/puml-mode/issues/26")))
 
+(defface apostrophe-comment
+  '((t :slant italic
+       :foreground "gray59"))
+  "Face for apostrophe comment"
+  :group 'plantuml-mode)
+
+(defun plantuml-apostrophe-comment ()
+  "Support apostrophe comment."
+  (interactive)
+  (font-lock-add-keywords
+   nil
+   '(("\\(^'+\\|\\s'+\\).*"
+      (0 (put-text-property
+          (match-beginning 0)
+          (match-end 0)
+          'face 'apostrophe-comment)))))
+  (font-lock-flush))
+
+
+(defun plantuml-color-bg ()
+  "Support apostrophe comment."
+  (interactive)
+  (font-lock-add-keywords
+   nil
+   '(((lambda (limit)
+        (re-search-forward plantuml-colors-regexp limit t))
+      (0 (put-text-property
+          (match-beginning 2)
+          (match-end 2)
+          'face (list :background (downcase (string-trim (match-string-no-properties 0)))))))))
+  (font-lock-flush))
+
+
 (add-hook 'plantuml-mode-hook 'plantuml-deprecation-warning)
+(add-hook 'plantuml-mode-hook 'plantuml-apostrophe-comment)
+(add-hook 'plantuml-mode-hook 'plantuml-color-bg)
+
 
 (provide 'plantuml-mode)
 ;;; plantuml-mode.el ends here
